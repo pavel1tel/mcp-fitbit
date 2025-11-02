@@ -129,7 +129,7 @@ async function main() {
 
   const port = parseInt(process.env.PORT || '3000');
 
-  const httpServer = app.listen(port, () => {
+  const httpServer = app.listen(port, "0.0.0.0", () => {
     console.log(`MCP Fitbit Server running on http://localhost:${port}/mcp`);
   }).on('error', error => {
     console.error('Server error:', error);
