@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  mcp-fitbit:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        FITBIT_CLIENT_ID: ${FITBIT_CLIENT_ID}
+        FITBIT_CLIENT_SECRET: ${FITBIT_CLIENT_SECRET}
+        DATABASE_URL: ${DATABASE_URL}
+        PORT: ${PORT:-3000}
+    ports:
+      - "${PORT:-3000}:${PORT:-3000}"
+    environment:
+      - FITBIT_CLIENT_ID=${FITBIT_CLIENT_ID}
+      - FITBIT_CLIENT_SECRET=${FITBIT_CLIENT_SECRET}
+      - DATABASE_URL=${DATABASE_URL}
+      - PORT=${PORT:-3000}
+      - NODE_ENV=production
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:${PORT:-3000}/health", "||", "exit", "1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s

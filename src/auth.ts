@@ -66,7 +66,7 @@ const fitbitConfig = {
 };
 
 // PostgreSQL Database Configuration
-const DATABASE_URL = 'postgresql://postgres:bgYBFteXdtavkNORLLhRLxjtkmzsHjpG@crossover.proxy.rlwy.net:35171/railway';
+const DATABASE_URL = process.env.DATABASE_URL || '';
 const dbPool = new Pool({
   connectionString: DATABASE_URL,
   ssl: {

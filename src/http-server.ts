@@ -41,6 +41,7 @@ function validateEnvironment(): void {
   const requiredVars = {
     FITBIT_CLIENT_ID: process.env.FITBIT_CLIENT_ID,
     FITBIT_CLIENT_SECRET: process.env.FITBIT_CLIENT_SECRET,
+    DATABASE_URL: process.env.DATABASE_URL,
   };
 
   const missingVars = Object.entries(requiredVars)
