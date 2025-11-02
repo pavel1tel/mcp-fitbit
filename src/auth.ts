@@ -7,6 +7,8 @@ import { AuthorizationCode, Token } from 'simple-oauth2';
 import { fileURLToPath } from 'url';
 import fs from 'fs/promises';
 import { existsSync } from 'fs';
+import pkg from 'pg';
+const { Pool } = pkg;
 import { FITBIT_OAUTH_CONFIG } from './config.js';
 
 // TypeScript interfaces for token data structures
@@ -63,6 +65,15 @@ const fitbitConfig = {
   },
 };
 
+// PostgreSQL Database Configuration
+const DATABASE_URL = 'postgresql://postgres:bgYBFteXdtavkNORLLhRLxjtkmzsHjpG@crossover.proxy.rlwy.net:35171/railway';
+const dbPool = new Pool({
+  connectionString: DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: false, // Required for Railway PostgreSQL
+  },
+});
+
 // OAuth2 Redirect URI and local server port
 const REDIRECT_URI = 'http://localhost:3000/callback';
 const PORT = 3000;
@@ -74,50 +85,86 @@ let tokenData: FitbitTokenData | null = null;
 // Holds the temporary HTTP server instance used for the OAuth callback
 let oauthServer: http.Server | null = null;
 
-// --- File paths for token persistence ---
+// --- File paths for token persistence (keeping for backward compatibility) ---
 const TOKEN_FILE_PATH = path.resolve(
   currentDirname,
   '..',
   '.fitbit-token.json'
 );
 
+// --- Database initialization ---
+/**
+ * Initializes the database table for storing Fitbit tokens
+ */
+async function initializeDatabase(): Promise<void> {
+  try {
+    const createTableQuery = `
+      CREATE TABLE IF NOT EXISTS fitbit_token (
+        id INTEGER PRIMARY KEY DEFAULT 1,
+        token_data JSONB NOT NULL,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT single_token_row CHECK (id = 1)
+      );
+    `;
+    await dbPool.query(createTableQuery);
+    console.error('Database table initialized successfully');
+  } catch (error) {
+    console.error('Error initializing database table:', error);
+    throw error;
+  }
+}
+
 // --- OAuth Client Initialization ---
 const oauthClient = new AuthorizationCode(fitbitConfig);
 
 /**
- * Saves the token data to a file for persistence
+ * Saves the token data to the database
  * @param tokenData The token data to save
  */
-async function saveTokenToFile(tokenData: FitbitTokenData): Promise<void> {
+async function saveTokenToDB(tokenData: FitbitTokenData): Promise<void> {
   try {
-    await fs.writeFile(
-      TOKEN_FILE_PATH,
-      JSON.stringify(tokenData, null, 2),
-      'utf8'
-    );
-    console.error(`Token saved to ${TOKEN_FILE_PATH}`);
+    const upsertQuery = `
+      INSERT INTO fitbit_token (id, token_data, updated_at)
+      VALUES (1, $1, CURRENT_TIMESTAMP)
+      ON CONFLICT (id)
+      DO UPDATE SET
+        token_data = EXCLUDED.token_data,
+        updated_at = CURRENT_TIMESTAMP;
+    `;
+    await dbPool.query(upsertQuery, [JSON.stringify(tokenData)]);
+    console.error('Token saved to database successfully');
   } catch (error) {
-    console.error(`Error saving token to file: ${error}`);
+    console.error(`Error saving token to database: ${error}`);
+    throw error;
   }
 }
 
 /**
- * Loads the token data from file
+ * Loads the token data from the database
  * @returns The token data or null if not found
  */
-async function loadTokenFromFile(): Promise<FitbitTokenData | null> {
+async function loadTokenFromDB(): Promise<FitbitTokenData | null> {
   try {
-    if (!existsSync(TOKEN_FILE_PATH)) {
-      console.error(`Token file not found at ${TOKEN_FILE_PATH}`);
+    const selectQuery = 'SELECT token_data FROM fitbit_token WHERE id = 1;';
+    const result = await dbPool.query(selectQuery);
+
+    if (result.rows.length === 0) {
+      console.error('No token found in database');
       return null;
     }
 
-    const data = await fs.readFile(TOKEN_FILE_PATH, 'utf8');
-    const parsedData = JSON.parse(data);
-    console.error('Token loaded from file successfully');
-    return parsedData;
+    const rawTokenData = result.rows[0].token_data;
+
+    // The pg library automatically parses JSON columns, so check if it's already an object
+    const tokenData = typeof rawTokenData === 'string'
+      ? JSON.parse(rawTokenData)
+      : rawTokenData as FitbitTokenData;
+
+    console.error('Token loaded from database successfully');
+    return tokenData;
   } catch (error) {
-    console.error(`Error loading token from file: ${error}`);
+    console.error(`Error loading token from database: ${error}`);
     return null;
   }
 }
@@ -185,10 +232,10 @@ export function startAuthorizationFlow(): void {
       accessToken = tokenResult.token.access_token as string;
       tokenData = tokenResult.token as FitbitTokenData;
 
-      // Persist token data to file
+      // Persist token data to database
       if (tokenData) {
-        await saveTokenToFile(tokenData);
-        console.error('Token data has been persisted to file');
+        await saveTokenToDB(tokenData);
+        console.error('Token data has been persisted to database');
       }
 
       res.send(
@@ -281,7 +328,7 @@ export async function getAccessToken(): Promise<string | null> {
         tokenData = refreshedToken.token as FitbitTokenData;
 
         // Save the refreshed token
-        await saveTokenToFile(tokenData);
+        await saveTokenToDB(tokenData);
         console.error('Token refreshed and saved successfully.');
         return accessToken;
       }
@@ -298,14 +345,17 @@ export async function getAccessToken(): Promise<string | null> {
 
 /**
  * Initializes the authentication module.
- * Loads persisted token from file storage if available.
+ * Loads persisted token from database storage if available.
  */
 export async function initializeAuth(): Promise<void> {
-  console.error('Auth initialized. Checking for persisted token...');
+  console.error('Auth initialized. Initializing database and checking for persisted token...');
 
   try {
-    // Load token data from file
-    tokenData = await loadTokenFromFile();
+    // Initialize database table
+    await initializeDatabase();
+
+    // Load token data from database
+    tokenData = await loadTokenFromDB();
 
     if (tokenData && tokenData.access_token) {
       accessToken = tokenData.access_token;
@@ -327,7 +377,7 @@ export async function initializeAuth(): Promise<void> {
 
             // Save the refreshed token
             if (tokenData) {
-              await saveTokenToFile(tokenData);
+              await saveTokenToDB(tokenData);
               console.error('Refreshed token saved successfully.');
             }
           }
