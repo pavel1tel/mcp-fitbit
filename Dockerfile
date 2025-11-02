@@ -49,7 +49,7 @@ USER nodejs
 ARG FITBIT_CLIENT_ID
 ARG FITBIT_CLIENT_SECRET
 ARG DATABASE_URL
-ARG PORT=3000
+ARG PORT=8080
 
 # Set environment variables
 ENV FITBIT_CLIENT_ID=${FITBIT_CLIENT_ID}
@@ -59,9 +59,6 @@ ENV PORT=${PORT}
 
 # Expose the port
 EXPOSE ${PORT}
-
-# Use dumb-init to handle signals properly
-ENTRYPOINT ["dumb-init", "--"]
 
 # Run the HTTP server
 CMD ["node", "build/http-server.js"]
