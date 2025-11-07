@@ -90,7 +90,7 @@ registerActivityGoalsTool(server, getAccessToken);
 registerActivityTimeSeriesTool(server, getAccessToken);
 registerAzmTimeSeriesTool(server, getAccessToken);
 
-app.post('/mcp', async (req, res) => {
+app.all('/mcp', async (req, res) => {
   // In stateless mode, create a new transport for each request to prevent
   // request ID collisions. Different clients may use the same JSON-RPC request IDs,
   // which would cause responses to be routed to the wrong HTTP connections if
